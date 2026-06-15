@@ -5,16 +5,18 @@ const PAGES = [
   { path: '/login', label: '1. 登录' },
   { path: '/register', label: '2. 注册' },
   { path: '/join/8FK2-9D3A', label: '3. 邀请加入' },
-  { path: '/dashboard', label: '4. 工作台' },
-  { path: '/partners', label: '5. 合作方' },
-  { path: '/partners/p1', label: '6. 合作方详情' },
-  { path: '/suppliers', label: '7. 供应商' },
-  { path: '/projects', label: '8. 接团单' },
-  { path: '/projects/new', label: '9. 新建接团' },
-  { path: '/projects/JTT-20260615-01', label: '10. 团详情' },
-  { path: '/finance', label: '11. 全局收支' },
-  { path: '/team', label: '12. 员工' },
-  { path: '/settings', label: '13. 设置' },
+  { path: '/dashboard', label: '4. 工作台（马总）' },
+  { path: '/projects', label: '5. 接团单（阿财）' },
+  { path: '/projects/new', label: '6. 新建接团' },
+  { path: '/projects/JTT-20260615-01', label: '7. 团详情' },
+  { path: '/partners', label: '8. 合作方' },
+  { path: '/partners/p1', label: '9. 合作方详情' },
+  { path: '/suppliers', label: '10. 供应商' },
+  { path: '/suppliers/s1', label: '11. 供应商详情' },
+  { path: '/finance', label: '12. 财务（王姐）' },
+  { path: '/team', label: '13. 员工' },
+  { path: '/settings', label: '14. 设置' },
+  { path: '/guide', label: '15. 导游端 P3', disabled: true },
 ];
 
 export function ProtoNav() {
@@ -29,7 +31,12 @@ export function ProtoNav() {
       {open && (
         <div className="proto-nav-list">
           {PAGES.map((p) => (
-            <button key={p.path} type="button" onClick={() => navigate(p.path)}>
+            <button
+              key={p.path}
+              type="button"
+              className={p.disabled ? 'disabled' : ''}
+              onClick={() => !p.disabled && navigate(p.path)}
+            >
               {p.label}
             </button>
           ))}

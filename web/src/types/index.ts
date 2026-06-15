@@ -1,9 +1,10 @@
-﻿export type UserRole = 'owner' | 'member' | 'admin';
-export type ProjectStatus = 'pending' | 'ongoing' | 'completed' | 'settling';
+﻿export type Persona = 'boss' | 'op' | 'finance';
+export type UserRole = 'owner' | 'member';
+export type ProjectStatus = 'pending' | 'ongoing' | 'completed' | 'settled' | 'cancelled';
 export type ScheduleDirection = 'receivable' | 'payable';
-export type ScheduleStatus = 'pending' | 'paid' | 'done';
+export type ScheduleStatus = 'pending' | 'done';
 export type TransactionDirection = 'income' | 'expense';
-export type SupplierCategory = 'hotel' | 'fleet' | 'guide' | 'ticket' | 'restaurant' | 'other';
+export type SupplierCategory = 'hotel' | 'transport' | 'restaurant' | 'ticket' | 'guide' | 'other';
 
 export interface Organization {
   id: string;
@@ -16,8 +17,9 @@ export interface User {
   id: string;
   orgId: string;
   name: string;
-  email: string;
+  phone: string;
   role: UserRole;
+  persona: Persona;
 }
 
 export interface Partner {
@@ -29,6 +31,7 @@ export interface Partner {
   settlementDays: number;
   activeProjects: number;
   unpaidReceivableCents: number;
+  note?: string;
 }
 
 export interface Supplier {
@@ -37,6 +40,8 @@ export interface Supplier {
   name: string;
   category: SupplierCategory;
   settlementNote: string;
+  contactName?: string;
+  contactPhone?: string;
 }
 
 export interface Project {
@@ -48,11 +53,14 @@ export interface Project {
   status: ProjectStatus;
   startDate: string;
   endDate: string;
-  pax: number;
+  paxAdult: number;
+  paxChild: number;
+  ownerUserId: string;
   leaderName?: string;
   leaderPhone?: string;
   remark?: string;
-  grossProfitCents: number;
+  cancelReason?: string;
+  budgetIncomeCents?: number;
 }
 
 export interface PaymentSchedule {
@@ -61,10 +69,11 @@ export interface PaymentSchedule {
   projectId: string;
   direction: ScheduleDirection;
   counterpartyName: string;
-  phase: string;
+  title: string;
   amountCents: number;
   dueDate: string;
   status: ScheduleStatus;
+  doneTxnId?: string;
 }
 
 export interface Transaction {
@@ -73,16 +82,17 @@ export interface Transaction {
   projectId: string;
   direction: TransactionDirection;
   category: string;
-  itemName: string;
+  amountCents: number;
   supplierId?: string;
-  unitPriceCents: number;
-  quantity: number;
   date: string;
   note?: string;
+  createdBy: string;
 }
 
 export interface Invite {
   code: string;
   orgId: string;
   expiresAt: string;
+  maxUses?: number;
+  usedCount?: number;
 }

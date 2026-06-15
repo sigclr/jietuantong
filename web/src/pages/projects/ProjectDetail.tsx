@@ -2,19 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useApp } from '../../mocks/store';
-import { formatMoney, formatDateShort, isOverdue } from '../../utils/format';
+import { useRole } from '../../hooks/useRole';
+import { formatMoney, formatDateShort, isOverdue, SUPPLIER_CATEGORY_LABELS, INCOME_CATEGORIES } from '../../utils/format';
 import { StatusBadge, ScheduleBadge } from '../../components/StatusBadge';
 import { Drawer } from '../../components/Drawer';
-
-const CATEGORY_LABEL: Record<string, string> = {
-  hotel: '酒店',
-  fleet: '用车',
-  guide: '导服',
-  ticket: '门票',
-  restaurant: '餐饮',
-  receivable: '团款',
-  other: '其他',
-};
+import { EmptyState } from '../../components/EmptyState';
+import { RowActions } from '../../components/RowActions';
 
 export function ProjectDetailPage() {
   const { id } = useParams();
@@ -22,28 +15,53 @@ export function ProjectDetailPage() {
     getProject,
     getPartnerName,
     getSupplierName,
+    getUserName,
     paymentSchedules,
     transactions,
     suppliers,
+    partners,
     markScheduleDone,
     updateProjectStatus,
+    cancelProject,
     addTransaction,
+    addSchedule,
+    addScheduleTemplate,
     highlightScheduleId,
     setHighlightSchedule,
     projectDetailTab,
     setProjectDetailTab,
     projectFinance,
+    toast,
   } = useApp();
+  const { canEditFinance, guardWrite } = useRole();
 
   const project = getProject(id ?? '');
   const [tab, setTab] = useState(projectDetailTab);
   const [txDrawer, setTxDrawer] = useState(false);
+  const [txDirection, setTxDirection] = useState<'income' | 'expense'>('expense');
   const [amount, setAmount] = useState('');
   const [showBigWarn, setShowBigWarn] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [settleConfirm, setSettleConfirm] = useState(false);
+  const [scheduleDrawer, setScheduleDrawer] = useState(false);
 
   useEffect(() => {
     setTab(projectDetailTab);
   }, [projectDetailTab]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setTxDrawer(false);
+        setScheduleDrawer(false);
+        setCancelOpen(false);
+        setSettleConfirm(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   useEffect(() => {
     if (highlightScheduleId) {
@@ -59,36 +77,82 @@ export function ProjectDetailPage() {
   const schedules = paymentSchedules.filter((s) => s.projectId === project.id);
   const txs = transactions.filter((t) => t.projectId === project.id);
   const finance = projectFinance(project.id);
+  const pendingSchedules = schedules.filter((s) => s.status === 'pending');
+  const partner = partners.find((p) => p.id === project.partnerId);
 
   const switchTab = (t: 'basic' | 'transactions' | 'schedules') => {
     setTab(t);
     setProjectDetailTab(t);
   };
 
-  const saveTx = () => {
+  const onStatusChange = (status: typeof project.status) => {
+    if (!guardWrite('修改团状态')) return;
+    if (status === 'settled' && pendingSchedules.length > 0) {
+      setSettleConfirm(true);
+      return;
+    }
+    if (status === 'cancelled') {
+      setCancelOpen(true);
+      return;
+    }
+    updateProjectStatus(project.id, status);
+  };
+
+  const confirmSettle = () => {
+    updateProjectStatus(project.id, 'settled');
+    setSettleConfirm(false);
+    toast('团已标记为已结清');
+  };
+
+  const confirmCancel = () => {
+    if (!cancelReason.trim()) return;
+    cancelProject(project.id, cancelReason);
+    setCancelOpen(false);
+    toast('团已取消');
+  };
+
+  const saveTx = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!guardWrite('记一笔')) return;
+    const fd = new FormData(e.currentTarget);
     const yuan = parseFloat(amount);
     if (!yuan || yuan <= 0) return;
-    const cents = Math.round(yuan * 100);
     addTransaction({
       projectId: project.id,
-      direction: 'expense',
-      category: 'fleet',
-      itemName: '用车追加',
-      supplierId: suppliers.find((s) => s.name.includes('西域'))?.id,
-      unitPriceCents: cents,
-      quantity: 1,
+      direction: txDirection,
+      category: fd.get('category') as string,
+      amountCents: Math.round(yuan * 100),
+      supplierId: txDirection === 'expense' ? (fd.get('supplierId') as string) || undefined : undefined,
       date: dayjs().format('YYYY-MM-DD'),
-      note: '原型录入',
+      note: (fd.get('note') as string) || undefined,
     });
     setAmount('');
     setTxDrawer(false);
     setShowBigWarn(false);
+    toast('已记账');
   };
 
   const onAmountChange = (v: string) => {
     setAmount(v);
     const yuan = parseFloat(v);
     setShowBigWarn(!isNaN(yuan) && yuan > 100000);
+  };
+
+  const addCustomSchedule = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!guardWrite('添加节点')) return;
+    const fd = new FormData(e.currentTarget);
+    const yuan = parseFloat(fd.get('amount') as string);
+    addSchedule({
+      projectId: project.id,
+      direction: fd.get('direction') as 'receivable' | 'payable',
+      counterpartyName: fd.get('counterparty') as string,
+      title: fd.get('title') as string,
+      amountCents: Math.round(yuan * 100),
+      dueDate: fd.get('dueDate') as string,
+    });
+    setScheduleDrawer(false);
+    toast('节点已添加');
   };
 
   return (
@@ -100,21 +164,32 @@ export function ProjectDetailPage() {
           </Link>{' '}
           / {project.groupNo}
         </h1>
-        <select
-          value={project.status}
-          onChange={(e) => updateProjectStatus(project.id, e.target.value as typeof project.status)}
-          style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)' }}
-        >
-          <option value="pending">待确认</option>
-          <option value="ongoing">执行中</option>
-          <option value="completed">已结团</option>
-          <option value="settling">结算中</option>
-        </select>
+        {canEditFinance ? (
+          <select
+            value={project.status}
+            onChange={(e) => onStatusChange(e.target.value as typeof project.status)}
+            style={{ padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)' }}
+          >
+            <option value="pending">待确认</option>
+            <option value="ongoing">进行中</option>
+            <option value="completed">已完成</option>
+            <option value="settled">已结清</option>
+            <option value="cancelled">取消团</option>
+          </select>
+        ) : (
+          <StatusBadge status={project.status} />
+        )}
       </div>
 
       <p style={{ marginBottom: 12 }}>
-        <strong>{project.title}</strong> · {getPartnerName(project.partnerId)} · {project.pax}人 ·{' '}
-        {formatDateShort(project.startDate)}-{formatDateShort(project.endDate)} · <StatusBadge status={project.status} />
+        <strong>{project.title}</strong> · {getPartnerName(project.partnerId)} · 成人{project.paxAdult}+儿童
+        {project.paxChild} · {formatDateShort(project.startDate)}-{formatDateShort(project.endDate)} ·{' '}
+        <StatusBadge status={project.status} />
+        {project.cancelReason && <span className="text-muted"> · 取消原因：{project.cancelReason}</span>}
+      </p>
+
+      <p className="text-muted" style={{ marginBottom: 12, fontSize: 12 }}>
+        计划毛利 · P2（占位）— 预算 {project.budgetIncomeCents ? formatMoney(project.budgetIncomeCents) : '未设'}
       </p>
 
       <div className="tabs">
@@ -149,9 +224,13 @@ export function ProjectDetailPage() {
               <div>{getPartnerName(project.partnerId)}</div>
             </div>
             <div>
+              <span className="text-muted">负责人</span>
+              <div>{getUserName(project.ownerUserId)}</div>
+            </div>
+            <div>
               <span className="text-muted">领队</span>
               <div>
-                {project.leaderName} {project.leaderPhone}
+                {project.leaderName ?? '—'} {project.leaderPhone ?? ''}
               </div>
             </div>
             <div>
@@ -177,125 +256,331 @@ export function ProjectDetailPage() {
               <span className="text-muted">毛利</span>
               <div className={`big ${finance.profitCents < 0 ? 'text-danger' : ''}`}>
                 {formatMoney(finance.profitCents)}
+                {finance.incomeCents > 0 && (
+                  <small className="text-muted" style={{ fontSize: 12, marginLeft: 8 }}>
+                    毛利率 {Math.round((finance.profitCents / finance.incomeCents) * 100)}%
+                  </small>
+                )}
               </div>
             </div>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => setTxDrawer(true)}>
-              + 记一笔支出
-            </button>
-          </div>
+          {canEditFinance && (
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setTxDirection('income');
+                  setTxDrawer(true);
+                }}
+              >
+                + 记一笔收入
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  setTxDirection('expense');
+                  setTxDrawer(true);
+                }}
+              >
+                + 记一笔支出
+              </button>
+            </div>
+          )}
           <div className="card">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>日期</th>
-                  <th>方向</th>
-                  <th>分类</th>
-                  <th>项目</th>
-                  <th>供应商</th>
-                  <th>金额</th>
-                </tr>
-              </thead>
-              <tbody>
-                {txs.map((t) => {
-                  const total = t.unitPriceCents * t.quantity;
-                  return (
+            {txs.length === 0 ? (
+              <EmptyState title="暂无收支明细" description="记录第一笔收入或支出" />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>方向</th>
+                    <th>分类</th>
+                    <th>说明</th>
+                    <th>供应商</th>
+                    <th>金额</th>
+                    <th>操作人</th>
+                    <th style={{ width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {txs.map((t) => (
                     <tr key={t.id}>
                       <td>{formatDateShort(t.date)}</td>
                       <td>{t.direction === 'income' ? '收' : '支'}</td>
-                      <td>{CATEGORY_LABEL[t.category] ?? t.category}</td>
-                      <td>{t.itemName}</td>
+                      <td>
+                        {SUPPLIER_CATEGORY_LABELS[t.category] ?? INCOME_CATEGORIES[t.category] ?? t.category}
+                      </td>
+                      <td>{t.note ?? '—'}</td>
                       <td>{t.supplierId ? getSupplierName(t.supplierId) : '—'}</td>
                       <td className={t.direction === 'income' ? '' : 'text-danger'}>
                         {t.direction === 'income' ? '+' : '-'}
-                        {formatMoney(total)}
+                        {formatMoney(t.amountCents)}
+                      </td>
+                      <td>{getUserName(t.createdBy)}</td>
+                      <td>
+                        {canEditFinance && (
+                          <RowActions
+                            items={[
+                              {
+                                label: '复制为新支出',
+                                onClick: () => {
+                                  addTransaction({
+                                    projectId: project.id,
+                                    direction: 'expense',
+                                    category: t.category,
+                                    amountCents: t.amountCents,
+                                    supplierId: t.supplierId,
+                                    date: dayjs().format('YYYY-MM-DD'),
+                                    note: `复制自 ${t.note ?? ''}`,
+                                  });
+                                  toast('已复制为新支出');
+                                },
+                              },
+                              {
+                                label: '删除',
+                                danger: true,
+                                onClick: () => toast('删除功能 v1.5 演示'),
+                              },
+                            ]}
+                          />
+                        )}
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       )}
 
       {tab === 'schedules' && (
         <>
+          {canEditFinance && (
+            <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={() => {
+                  if (guardWrite('添加节点模板')) addScheduleTemplate(project.id, 'deposit_tail');
+                  toast('已添加定金/尾款模板');
+                }}
+              >
+                + 定金/尾款模板
+              </button>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setScheduleDrawer(true)}>
+                + 自定义节点
+              </button>
+            </div>
+          )}
           <div className="card">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>方向</th>
-                  <th>对象</th>
-                  <th>款项</th>
-                  <th>金额</th>
-                  <th>到期</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedules.map((s) => {
-                  const od = isOverdue(s.dueDate, s.status);
-                  return (
-                    <tr key={s.id} className={highlightScheduleId === s.id ? 'highlight-row' : ''}>
-                      <td>{s.direction === 'receivable' ? '应收' : '应付'}</td>
-                      <td>{s.counterpartyName}</td>
-                      <td>{s.phase}</td>
-                      <td>{formatMoney(s.amountCents)}</td>
-                      <td>
-                        {s.dueDate}
-                        {od && <span className="text-danger"> （逾期{dayjs().diff(dayjs(s.dueDate), 'day')}天）</span>}
-                      </td>
-                      <td>
-                        <ScheduleBadge status={s.status} overdue={od} />
-                      </td>
-                      <td>
-                        {s.status === 'pending' && (
-                          <button type="button" className="btn btn-outline btn-sm" onClick={() => markScheduleDone(s.id)}>
-                            标记{s.direction === 'receivable' ? '已收' : '已付'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {schedules.length === 0 ? (
+              <EmptyState
+                title="暂无收付款节点"
+                description="添加定金/尾款或自定义应收应付节点"
+                action={
+                  canEditFinance ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => addScheduleTemplate(project.id, 'deposit_tail')}
+                    >
+                      + 定金/尾款模板
+                    </button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>方向</th>
+                    <th>对象</th>
+                    <th>款项</th>
+                    <th>金额</th>
+                    <th>到期</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                    <th style={{ width: 40 }} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {schedules.map((s) => {
+                    const od = isOverdue(s.dueDate, s.status);
+                    return (
+                      <tr key={s.id} className={highlightScheduleId === s.id ? 'highlight-row' : ''}>
+                        <td>{s.direction === 'receivable' ? '应收' : '应付'}</td>
+                        <td>{s.counterpartyName}</td>
+                        <td>{s.title}</td>
+                        <td>{formatMoney(s.amountCents)}</td>
+                        <td>
+                          {s.dueDate}
+                          {od && (
+                            <span className="text-danger"> （逾期{dayjs().diff(dayjs(s.dueDate), 'day')}天）</span>
+                          )}
+                        </td>
+                        <td>
+                          <ScheduleBadge status={s.status} overdue={od} />
+                        </td>
+                        <td>
+                          {s.status === 'pending' && canEditFinance && (
+                            <button
+                              type="button"
+                              className="btn btn-outline btn-sm"
+                              onClick={() => {
+                                markScheduleDone(s.id);
+                                toast('已标记并联动记账');
+                              }}
+                            >
+                              标记{s.direction === 'receivable' ? '已收' : '已付'}
+                            </button>
+                          )}
+                        </td>
+                        <td>
+                          <RowActions
+                            items={[
+                              {
+                                label: '查看联动明细',
+                                onClick: () => {
+                                  if (s.doneTxnId) switchTab('transactions');
+                                  else toast('尚未完成，无联动明细');
+                                },
+                              },
+                            ]}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </>
       )}
 
-      <Drawer open={txDrawer} title="记一笔支出" onClose={() => setTxDrawer(false)}>
-        <div className="form-g">
-          <label>分类</label>
-          <select defaultValue="fleet">
-            <option value="fleet">用车</option>
-            <option value="hotel">酒店</option>
-          </select>
-        </div>
-        <div className="form-g">
-          <label>金额（元）</label>
-          <input value={amount} onChange={(e) => onAmountChange(e.target.value)} placeholder="9600" />
-          {showBigWarn && (
-            <div className="warn-box">⚠ 金额超过 ¥100,000，请确认是否输入有误</div>
+      <Drawer
+        open={txDrawer}
+        title={txDirection === 'income' ? '记一笔收入' : '记一笔支出'}
+        onClose={() => setTxDrawer(false)}
+      >
+        <form onSubmit={saveTx}>
+          <div className="form-g">
+            <label>分类</label>
+            {txDirection === 'income' ? (
+              <select name="category" defaultValue="group_fee">
+                <option value="group_fee">团款</option>
+                <option value="other_income">其他收入</option>
+              </select>
+            ) : (
+              <select name="category" defaultValue="transport">
+                {Object.entries(SUPPLIER_CATEGORY_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className="form-g">
+            <label>金额（元）</label>
+            <input value={amount} onChange={(e) => onAmountChange(e.target.value)} placeholder="9600" required />
+            {showBigWarn && <div className="warn-box">⚠ 金额超过 ¥100,000，请确认是否输入有误</div>}
+          </div>
+          {txDirection === 'expense' && (
+            <div className="form-g">
+              <label>供应商</label>
+              <select name="supplierId" defaultValue={suppliers.find((s) => s.category === 'transport')?.id}>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           )}
-        </div>
-        <div className="form-g">
-          <label>供应商</label>
-          <select defaultValue={suppliers.find((s) => s.name.includes('西域'))?.id}>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button type="button" className="btn btn-primary" onClick={saveTx}>
-          保存
-        </button>
+          <div className="form-g">
+            <label>备注</label>
+            <input name="note" placeholder="说明" />
+          </div>
+          <button type="submit" className="btn btn-primary">
+            保存
+          </button>
+        </form>
       </Drawer>
+
+      <Drawer open={scheduleDrawer} title="自定义收付款节点" onClose={() => setScheduleDrawer(false)}>
+        <form onSubmit={addCustomSchedule}>
+          <div className="form-g">
+            <label>方向</label>
+            <select name="direction" defaultValue="receivable">
+              <option value="receivable">应收</option>
+              <option value="payable">应付</option>
+            </select>
+          </div>
+          <div className="form-g">
+            <label>对象</label>
+            <input name="counterparty" defaultValue={partner?.name ?? ''} required />
+          </div>
+          <div className="form-g">
+            <label>款项名称</label>
+            <input name="title" placeholder="定金/尾款/房费" required />
+          </div>
+          <div className="form-g">
+            <label>金额（元）</label>
+            <input name="amount" type="number" required />
+          </div>
+          <div className="form-g">
+            <label>到期日</label>
+            <input name="dueDate" type="date" defaultValue={dayjs().add(7, 'day').format('YYYY-MM-DD')} required />
+          </div>
+          <button type="submit" className="btn btn-primary">
+            添加
+          </button>
+        </form>
+      </Drawer>
+
+      {settleConfirm && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <h3>确认结清？</h3>
+            <p className="text-muted">
+              仍有 <strong>{pendingSchedules.length}</strong> 笔待办节点未完成，结清后建议核对账目。
+            </p>
+            <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={() => setSettleConfirm(false)}>
+                取消
+              </button>
+              <button type="button" className="btn btn-primary" onClick={confirmSettle}>
+                仍要结清
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cancelOpen && (
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <h3>取消团</h3>
+            <div className="form-g">
+              <label>取消原因 *</label>
+              <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)} rows={3} />
+            </div>
+            <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={() => setCancelOpen(false)}>
+                返回
+              </button>
+              <button type="button" className="btn btn-primary" onClick={confirmCancel}>
+                确认取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

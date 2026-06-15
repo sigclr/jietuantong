@@ -1,21 +1,42 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../mocks/store';
+import { useRole } from '../hooks/useRole';
+import { personaLabel } from '../utils/format';
+import type { Persona } from '../types';
+
+const PERSONAS: Persona[] = ['boss', 'op', 'finance'];
 
 export function TopBar() {
   const { search, setProjectDetailTab } = useApp();
+  const { persona, setPersona } = useRole();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [roleOpen, setRoleOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const roleRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const results = search(query);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (roleRef.current && !roleRef.current.contains(e.target as Node)) setRoleOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement).tagName)) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const pick = (type: string, id: string) => {
@@ -29,11 +50,19 @@ export function TopBar() {
     }
   };
 
+  const switchPersona = (p: Persona) => {
+    setPersona(p);
+    setRoleOpen(false);
+    const home = p === 'boss' ? '/dashboard' : p === 'op' ? '/projects' : '/finance';
+    navigate(home);
+  };
+
   return (
     <header className="topbar">
       <div className="topbar-search" ref={ref}>
         <input
-          placeholder="搜索团号/合作方…"
+          ref={searchInputRef}
+          placeholder="搜索团号/合作方… (按 / 聚焦)"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -62,7 +91,29 @@ export function TopBar() {
           </div>
         )}
       </div>
-      <div className="topbar-user">马总 ▾</div>
+      <div className="topbar-right">
+        <span className="demo-tag">演示用</span>
+        <div className="role-switcher" ref={roleRef}>
+          <button type="button" className="role-switcher-btn" onClick={() => setRoleOpen(!roleOpen)}>
+            {personaLabel(persona)} ▾
+          </button>
+          {roleOpen && (
+            <div className="role-switcher-menu">
+              {PERSONAS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className={p === persona ? 'active' : ''}
+                  onClick={() => switchPersona(p)}
+                >
+                  {personaLabel(p)}
+                  <small>{p === 'boss' ? '老板' : p === 'op' ? '计调' : '财务'}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </header>
   );
 }

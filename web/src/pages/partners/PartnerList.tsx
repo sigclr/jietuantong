@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../mocks/store';
+import { useRole } from '../../hooks/useRole';
 import { formatMoney } from '../../utils/format';
 import { Drawer } from '../../components/Drawer';
 
 export function PartnerListPage() {
   const { partners, projects, addPartner } = useApp();
+  const { canManagePartners, guardWrite } = useRole();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [name, setName] = useState('');
@@ -13,6 +15,7 @@ export function PartnerListPage() {
   const projectCount = (partnerId: string) => projects.filter((p) => p.partnerId === partnerId).length;
 
   const save = () => {
+    if (!guardWrite('新增合作方')) return;
     if (!name.trim()) return;
     addPartner({
       name: name.trim(),
@@ -28,9 +31,11 @@ export function PartnerListPage() {
     <>
       <div className="page-header">
         <h1>合作方（组团社）</h1>
-        <button type="button" className="btn btn-primary" onClick={() => setDrawerOpen(true)}>
-          + 新增合作方
-        </button>
+        {canManagePartners && (
+          <button type="button" className="btn btn-primary" onClick={() => setDrawerOpen(true)}>
+            + 新增合作方
+          </button>
+        )}
       </div>
 
       <div className="toolbar">

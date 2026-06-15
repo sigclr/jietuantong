@@ -6,7 +6,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 export function PartnerDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getPartner, projects, paymentSchedules } = useApp();
+  const { getPartner, projects, paymentSchedules, projectFinance } = useApp();
   const partner = getPartner(id ?? '');
 
   if (!partner) {
@@ -79,7 +79,7 @@ export function PartnerDetailPage() {
                         {proj?.groupNo}
                       </a>
                     </td>
-                    <td>{s.phase}</td>
+                    <td>{s.title}</td>
                     <td className="text-danger">{formatMoney(s.amountCents)}</td>
                     <td>{s.dueDate}</td>
                   </tr>
@@ -103,17 +103,22 @@ export function PartnerDetailPage() {
             </tr>
           </thead>
           <tbody>
-            {history.map((p) => (
-              <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${p.groupNo}`)}>
-                <td>{p.groupNo}</td>
-                <td>{p.title}</td>
-                <td>{p.pax}人</td>
-                <td>
-                  <StatusBadge status={p.status} />
-                </td>
-                <td>{p.grossProfitCents ? formatMoney(p.grossProfitCents) : '—'}</td>
-              </tr>
-            ))}
+            {history.map((p) => {
+              const fin = projectFinance(p.id);
+              return (
+                <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${p.groupNo}`)}>
+                  <td>{p.groupNo}</td>
+                  <td>{p.title}</td>
+                  <td>
+                    {p.paxAdult}+{p.paxChild}
+                  </td>
+                  <td>
+                    <StatusBadge status={p.status} />
+                  </td>
+                  <td>{fin.profitCents ? formatMoney(fin.profitCents) : '—'}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

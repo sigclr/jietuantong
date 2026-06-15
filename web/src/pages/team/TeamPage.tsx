@@ -14,7 +14,10 @@ export function TeamPage() {
     });
   };
 
-  const roleLabel = (role: string) => (role === 'owner' ? '老板(owner)' : '员工(member)');
+  const roleLabel = (role: string, persona: string) => {
+    const personaMap: Record<string, string> = { boss: '老板', op: '计调', finance: '财务' };
+    return `${personaMap[persona] ?? persona} (${role === 'owner' ? 'owner' : 'member'})`;
+  };
 
   return (
     <>
@@ -39,8 +42,8 @@ export function TeamPage() {
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.name}</td>
-                <td>{roleLabel(u.role)}</td>
-                <td>{u.email.replace('@siluroad.xj', '@…')}</td>
+                <td>{roleLabel(u.role, u.persona)}</td>
+                <td>{u.phone}</td>
                 <td>{u.role !== 'owner' && <button className="btn btn-outline btn-sm">停用</button>}</td>
               </tr>
             ))}

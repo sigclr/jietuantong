@@ -12,9 +12,11 @@ import { ProjectListPage } from './pages/projects/ProjectList';
 import { ProjectNewPage } from './pages/projects/ProjectNew';
 import { ProjectDetailPage } from './pages/projects/ProjectDetail';
 import { SupplierListPage } from './pages/suppliers/SupplierList';
+import { SupplierDetailPage } from './pages/suppliers/SupplierDetail';
 import { FinanceListPage } from './pages/finance/FinanceList';
 import { TeamPage } from './pages/team/TeamPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
+import { ComingSoonPage } from './pages/ComingSoon';
 import './styles/global.css';
 
 export default function App() {
@@ -36,9 +38,14 @@ export default function App() {
             <Route path="/partners" element={<PartnerListPage />} />
             <Route path="/partners/:id" element={<PartnerDetailPage />} />
             <Route path="/suppliers" element={<SupplierListPage />} />
+            <Route path="/suppliers/:id" element={<SupplierDetailPage />} />
             <Route path="/finance" element={<FinanceListPage />} />
             <Route path="/team" element={<TeamPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/guide"
+              element={<ComingSoonPage title="导游端小程序" subtitle="导游努尔兰 · 行程确认与报账 · P3 规划" />}
+            />
           </Route>
 
           <Route path="/" element={<Navigate to="/login" replace />} />

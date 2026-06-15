@@ -3,6 +3,7 @@ import { useApp } from '../mocks/store';
 import { Sidebar } from '../components/Sidebar';
 import { TopBar } from '../components/TopBar';
 import { ProtoNav } from '../components/ProtoNav';
+import { Toast } from '../components/Toast';
 
 export function AppShell() {
   const { isLoggedIn } = useApp();
@@ -24,6 +25,7 @@ export function AppShell() {
         </div>
       </div>
       <ProtoNav />
+      <Toast />
     </div>
   );
 }

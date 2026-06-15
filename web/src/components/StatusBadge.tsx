@@ -5,7 +5,8 @@ const STATUS_CLASS: Record<string, string> = {
   pending: 'badge-pending',
   ongoing: 'badge-ongoing',
   completed: 'badge-completed',
-  settling: 'badge-settling',
+  settled: 'badge-settled',
+  cancelled: 'badge-cancelled',
 };
 
 export function StatusBadge({ status }: { status: ProjectStatus | string }) {
@@ -13,7 +14,7 @@ export function StatusBadge({ status }: { status: ProjectStatus | string }) {
 }
 
 export function ScheduleBadge({ status, overdue }: { status: string; overdue?: boolean }) {
-  if (status === 'paid') return <span className="badge badge-paid">已收/已付</span>;
+  if (status === 'done') return <span className="badge badge-paid">已收/已付</span>;
   if (overdue) return <span className="badge badge-overdue">逾期</span>;
   return <span className="badge badge-pending">待收/待付</span>;
 }

@@ -13,7 +13,7 @@ export function LoginPage() {
       setShowError(false);
     }
     login();
-    navigate('/dashboard');
+    navigate('/projects');
   };
 
   return (

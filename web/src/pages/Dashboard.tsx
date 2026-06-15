@@ -1,21 +1,38 @@
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { useApp } from '../mocks/store';
+import { useRole } from '../hooks/useRole';
 import { formatMoney } from '../utils/format';
 import { StatusBadge } from '../components/StatusBadge';
+import { EmptyState } from '../components/EmptyState';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { dashboardStats, overdueSchedules, projects, paymentSchedules, getPartnerName, setHighlightSchedule, setProjectDetailTab } =
-    useApp();
+  const {
+    dashboardStats,
+    overdueSchedules,
+    projects,
+    paymentSchedules,
+    getPartnerName,
+    setHighlightSchedule,
+    setProjectDetailTab,
+    projectFinance,
+  } = useApp();
+  const { isBoss, isOp, isFinance, canCreateProject, guardWrite } = useRole();
   const stats = dashboardStats();
   const overdue = overdueSchedules();
-  const recent = [...projects].sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 5);
+
+  const visibleProjects = isOp
+    ? projects.filter((p) => p.ownerUserId === 'u2' && (p.status === 'ongoing' || p.status === 'pending'))
+    : projects;
+
+  const recent = [...visibleProjects].sort((a, b) => b.startDate.localeCompare(a.startDate)).slice(0, 5);
 
   const pendingNotOverdue = paymentSchedules.filter(
     (s) => s.status === 'pending' && !overdue.find((o) => o.id === s.id),
   );
   const todoList = [...overdue, ...pendingNotOverdue]
+    .filter((s) => !isOp || projects.find((p) => p.id === s.projectId && p.ownerUserId === 'u2'))
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 8);
 
@@ -32,7 +49,16 @@ export function DashboardPage() {
         <span className="text-muted">{dayjs().format('YYYY年M月D日 dddd')}</span>
       </div>
 
-      {stats.overdueReceivableCount > 0 && (
+      {isBoss && (
+        <div className="role-banner">
+          老板视图 · 数据只读，操作请由计调阿财执行
+        </div>
+      )}
+      {isFinance && (
+        <div className="role-banner">财务视图 · 收支与账龄只读，导出功能为演示</div>
+      )}
+
+      {isBoss && stats.overdueReceivableCount > 0 && (
         <div className="alert-bar">
           <span>
             有 <strong>{stats.overdueReceivableCount}</strong> 笔应收已逾期，合计{' '}
@@ -48,42 +74,65 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="label">本月接团</div>
-          <div className="value">{stats.monthProjects} 团</div>
-        </div>
-        <div className="stat-card">
-          <div className="label">在途团</div>
-          <div className="value">{stats.ongoing} 团</div>
-        </div>
-        <div className="stat-card">
-          <div className="label">本月毛利</div>
-          <div className="value">{formatMoney(stats.monthProfitCents)}</div>
-        </div>
-        <div className="stat-card">
-          <div className="label">逾期应收</div>
-          <div className={`value ${stats.overdueReceivableCount ? 'danger' : ''}`}>
-            {formatMoney(stats.overdueReceivableCents)} / {stats.overdueReceivableCount}笔
+      <div className={`stats-grid ${isOp ? 'stats-grid-2' : ''}`}>
+        {!isOp && (
+          <div className="stat-card">
+            <div className="label">本月接团</div>
+            <div className="value">{stats.monthProjects} 团</div>
           </div>
+        )}
+        <div className="stat-card">
+          <div className="label">{isOp ? '我的在途团' : '在途团'}</div>
+          <div className="value">{isOp ? visibleProjects.length : stats.ongoing} 团</div>
         </div>
+        {!isFinance && (
+          <div className="stat-card">
+            <div className="label">本月毛利</div>
+            <div className="value">{formatMoney(stats.monthProfitCents)}</div>
+          </div>
+        )}
+        {isFinance && (
+          <>
+            <div className="stat-card">
+              <div className="label">待办节点</div>
+              <div className="value">{stats.pendingScheduleCount} 笔</div>
+            </div>
+            <div className="stat-card">
+              <div className="label">逾期应收</div>
+              <div className={`value ${stats.overdueReceivableCount ? 'danger' : ''}`}>
+                {formatMoney(stats.overdueReceivableCents)}
+              </div>
+            </div>
+          </>
+        )}
+        {isBoss && (
+          <div className="stat-card">
+            <div className="label">逾期应收</div>
+            <div className={`value ${stats.overdueReceivableCount ? 'danger' : ''}`}>
+              {formatMoney(stats.overdueReceivableCents)} / {stats.overdueReceivableCount}笔
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card">
         <div className="card-h">待办结算节点（按到期日升序）</div>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>状态</th>
-              <th>方向</th>
-              <th>对象</th>
-              <th>团号</th>
-              <th>款项</th>
-              <th>金额</th>
-            </tr>
-          </thead>
-          <tbody>
-            {todoList.map((s) => {
+        {todoList.length === 0 ? (
+          <EmptyState title="暂无待办节点" description="所有收付款节点已处理完毕" />
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>状态</th>
+                <th>方向</th>
+                <th>对象</th>
+                <th>团号</th>
+                <th>款项</th>
+                <th>金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              {todoList.map((s) => {
                 const proj = projects.find((p) => p.id === s.projectId);
                 const isOd = s.status === 'pending' && dayjs(s.dueDate).isBefore(dayjs(), 'day');
                 const daysUntil = dayjs(s.dueDate).diff(dayjs(), 'day');
@@ -106,21 +155,33 @@ export function DashboardPage() {
                     <td>{s.direction === 'receivable' ? '收' : '付'}</td>
                     <td>{s.counterpartyName}</td>
                     <td>{proj?.groupNo}</td>
-                    <td>{s.phase}</td>
+                    <td>{s.title}</td>
                     <td>{formatMoney(s.amountCents)}</td>
                   </tr>
                 );
               })}
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="card">
         <div className="card-h">
-          最近接团单
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/projects/new')}>
-            + 新建接团单
-          </button>
+          {isOp ? '我的在途接团单' : '最近接团单'}
+          {canCreateProject && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/projects/new')}>
+              + 新建接团单
+            </button>
+          )}
+          {!canCreateProject && (
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => guardWrite('新建接团单')}
+            >
+              + 新建接团单
+            </button>
+          )}
         </div>
         <table className="data-table">
           <thead>
@@ -134,26 +195,31 @@ export function DashboardPage() {
             </tr>
           </thead>
           <tbody>
-            {recent.map((p) => (
-              <tr
-                key={p.id}
-                style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/projects/${p.groupNo}`)}
-              >
-                <td>
-                  <strong>{p.groupNo}</strong>
-                </td>
-                <td>{p.title}</td>
-                <td>{getPartnerName(p.partnerId)}</td>
-                <td>{p.pax}人</td>
-                <td>
-                  <StatusBadge status={p.status} />
-                </td>
-                <td className={p.grossProfitCents >= 0 ? 'text-primary' : 'text-danger'}>
-                  {p.grossProfitCents ? formatMoney(p.grossProfitCents) : '—'}
-                </td>
-              </tr>
-            ))}
+            {recent.map((p) => {
+              const fin = projectFinance(p.id);
+              return (
+                <tr
+                  key={p.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(`/projects/${p.groupNo}`)}
+                >
+                  <td>
+                    <strong>{p.groupNo}</strong>
+                  </td>
+                  <td>{p.title}</td>
+                  <td>{getPartnerName(p.partnerId)}</td>
+                  <td>
+                    {p.paxAdult}+{p.paxChild}
+                  </td>
+                  <td>
+                    <StatusBadge status={p.status} />
+                  </td>
+                  <td className={fin.profitCents >= 0 ? 'text-primary' : 'text-danger'}>
+                    {fin.profitCents ? formatMoney(fin.profitCents) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

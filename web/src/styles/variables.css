@@ -1,0 +1,15 @@
+﻿:root {
+  --primary: #1eb2a6;
+  --primary-dark: #179a90;
+  --sidebar-bg: #2c3e50;
+  --sidebar-width: 220px;
+  --border: #e8ecef;
+  --bg: #f5f7fa;
+  --text: #333;
+  --muted: #888;
+  --danger: #c0392b;
+  --warning: #856404;
+  --success: #155724;
+  --content-max: 1200px;
+  --topbar-height: 56px;
+}

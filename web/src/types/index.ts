@@ -1,10 +1,14 @@
 ﻿export type Persona = 'boss' | 'op' | 'finance';
 export type UserRole = 'owner' | 'member';
 export type ProjectStatus = 'pending' | 'ongoing' | 'completed' | 'settled' | 'cancelled';
+export type BizType = 'self_operated' | 'outsourced_out';
+export type PartnerKind = 'group_agent' | 'peer' | 'both';
+export type PricingUnit = 'per_person' | 'per_group';
 export type ScheduleDirection = 'receivable' | 'payable';
 export type ScheduleStatus = 'pending' | 'done';
 export type TransactionDirection = 'income' | 'expense';
 export type SupplierCategory = 'hotel' | 'transport' | 'restaurant' | 'ticket' | 'guide' | 'other';
+export type ProjectDetailTab = 'basic' | 'quote' | 'transactions' | 'schedules';
 
 export interface Organization {
   id: string;
@@ -28,6 +32,7 @@ export interface Partner {
   name: string;
   contact: string;
   phone: string;
+  partnerKind: PartnerKind;
   settlementDays: number;
   activeProjects: number;
   unpaidReceivableCents: number;
@@ -50,6 +55,8 @@ export interface Project {
   groupNo: string;
   title: string;
   partnerId: string;
+  bizType: BizType;
+  outsourcedToPartnerId?: string;
   status: ProjectStatus;
   startDate: string;
   endDate: string;
@@ -60,7 +67,18 @@ export interface Project {
   leaderPhone?: string;
   remark?: string;
   cancelReason?: string;
-  budgetIncomeCents?: number;
+}
+
+export interface ProjectQuoteItem {
+  id: string;
+  orgId: string;
+  projectId: string;
+  itemLabel: string;
+  unitPriceCents: number;
+  pricingUnit: PricingUnit;
+  quantity: number;
+  remark?: string;
+  sortOrder: number;
 }
 
 export interface PaymentSchedule {
@@ -96,3 +114,7 @@ export interface Invite {
   maxUses?: number;
   usedCount?: number;
 }
+
+export type QuoteItemDraft = Omit<ProjectQuoteItem, 'id' | 'orgId' | 'projectId' | 'sortOrder'> & {
+  sortOrder?: number;
+};

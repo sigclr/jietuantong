@@ -18,3 +18,10 @@ export function ScheduleBadge({ status, overdue }: { status: string; overdue?: b
   if (overdue) return <span className="badge badge-overdue">逾期</span>;
   return <span className="badge badge-pending">待收/待付</span>;
 }
+
+export function BizTypeBadge({ bizType }: { bizType: string }) {
+  if (bizType === 'outsourced_out') {
+    return <span className="badge badge-outsourced">拼出</span>;
+  }
+  return <span className="badge badge-self">自营</span>;
+}

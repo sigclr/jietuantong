@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../mocks/store';
 import { useRole } from '../../hooks/useRole';
 import { formatMoney, formatDateShort } from '../../utils/format';
-import { StatusBadge } from '../../components/StatusBadge';
+import { StatusBadge, BizTypeBadge } from '../../components/StatusBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { RowActions } from '../../components/RowActions';
 
@@ -103,6 +103,7 @@ export function ProjectListPage() {
                 <th>团号</th>
                 <th>团名/线路</th>
                 <th>组团社</th>
+                <th>类型</th>
                 <th>人数</th>
                 <th>起止日期</th>
                 <th>状态</th>
@@ -120,6 +121,9 @@ export function ProjectListPage() {
                     </td>
                     <td>{p.title}</td>
                     <td>{getPartnerName(p.partnerId)}</td>
+                    <td>
+                      <BizTypeBadge bizType={p.bizType} />
+                    </td>
                     <td>
                       {p.paxAdult}+{p.paxChild}
                     </td>

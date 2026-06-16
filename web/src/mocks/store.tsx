@@ -1,7 +1,18 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import dayjs from 'dayjs';
 import { cloneInitialData } from './data';
-import type { Partner, PaymentSchedule, Persona, Project, Supplier, Transaction } from '../types';
+import { plannedIncomeCents } from '../utils/quote';
+import type {
+  Partner,
+  PaymentSchedule,
+  Persona,
+  Project,
+  ProjectDetailTab,
+  ProjectQuoteItem,
+  QuoteItemDraft,
+  Supplier,
+  Transaction,
+} from '../types';
 
 export interface SearchResult {
   type: 'project' | 'partner';
@@ -16,13 +27,14 @@ interface AppState {
   partners: Partner[];
   suppliers: Supplier[];
   projects: Project[];
+  projectQuoteItems: ProjectQuoteItem[];
   paymentSchedules: PaymentSchedule[];
   transactions: Transaction[];
   invites: ReturnType<typeof cloneInitialData>['invites'];
   isLoggedIn: boolean;
   currentPersona: Persona;
   highlightScheduleId: string | null;
-  projectDetailTab: 'basic' | 'transactions' | 'schedules';
+  projectDetailTab: ProjectDetailTab;
   toastMessage: string | null;
 }
 
@@ -43,6 +55,10 @@ interface AppContextValue extends AppState {
   updateProjectStatus: (id: string, status: Project['status']) => void;
   cancelProject: (id: string, reason: string) => void;
   addProject: (p: Omit<Project, 'id' | 'orgId' | 'groupNo'>) => { id: string; groupNo: string };
+  addQuoteItems: (projectId: string, items: QuoteItemDraft[]) => void;
+  setQuoteItems: (projectId: string, items: QuoteItemDraft[]) => void;
+  getQuoteItems: (projectId: string) => ProjectQuoteItem[];
+  projectPlannedIncome: (projectId: string) => number;
   addSchedule: (s: Omit<PaymentSchedule, 'id' | 'orgId' | 'status'>) => void;
   addScheduleTemplate: (projectId: string, template: 'deposit_tail') => void;
   addPartner: (p: Omit<Partner, 'id' | 'orgId' | 'activeProjects' | 'unpaidReceivableCents'>) => void;
@@ -50,7 +66,7 @@ interface AppContextValue extends AppState {
   addTransaction: (t: Omit<Transaction, 'id' | 'orgId' | 'createdBy'>) => void;
   search: (q: string) => SearchResult[];
   setHighlightSchedule: (id: string | null) => void;
-  setProjectDetailTab: (tab: 'basic' | 'transactions' | 'schedules') => void;
+  setProjectDetailTab: (tab: ProjectDetailTab) => void;
   projectFinance: (projectId: string) => {
     incomeCents: number;
     expenseCents: number;
@@ -199,11 +215,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const project = s.projects.find((p) => p.id === projectId);
       if (!project) return s;
       const partner = s.partners.find((p) => p.id === project.partnerId);
+      const quoteItems = s.projectQuoteItems.filter((q) => q.projectId === projectId);
+      const fromQuote = quoteItems.length > 0 ? plannedIncomeCents(quoteItems, project) : 0;
       const total =
-        project.budgetIncomeCents ??
-        (s.paymentSchedules
+        fromQuote ||
+        s.paymentSchedules
           .filter((x) => x.projectId === projectId && x.direction === 'receivable')
-          .reduce((sum, x) => sum + x.amountCents, 0) || 10000000);
+          .reduce((sum, x) => sum + x.amountCents, 0) ||
+        10000000;
       const deposit = Math.round(total * 0.3);
       const tail = total - deposit;
       const base = Date.now();
@@ -234,6 +253,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...s, paymentSchedules: [...s.paymentSchedules, ...newSchedules] };
     });
   }, []);
+
+  const addQuoteItems = useCallback((projectId: string, items: QuoteItemDraft[]) => {
+    if (items.length === 0) return;
+    const base = Date.now();
+    setState((s) => ({
+      ...s,
+      projectQuoteItems: [
+        ...s.projectQuoteItems,
+        ...items.map((d, i) => ({
+          id: `pqi${base}${i}`,
+          orgId: s.organization.id,
+          projectId,
+          itemLabel: d.itemLabel,
+          unitPriceCents: d.unitPriceCents,
+          pricingUnit: d.pricingUnit,
+          quantity: d.quantity,
+          remark: d.remark,
+          sortOrder: i,
+        })),
+      ],
+    }));
+  }, []);
+
+  const setQuoteItems = useCallback((projectId: string, items: QuoteItemDraft[]) => {
+    const base = Date.now();
+    setState((s) => ({
+      ...s,
+      projectQuoteItems: [
+        ...s.projectQuoteItems.filter((q) => q.projectId !== projectId),
+        ...items.map((d, i) => ({
+          id: `pqi${base}${i}`,
+          orgId: s.organization.id,
+          projectId,
+          itemLabel: d.itemLabel,
+          unitPriceCents: d.unitPriceCents,
+          pricingUnit: d.pricingUnit,
+          quantity: d.quantity,
+          remark: d.remark,
+          sortOrder: i,
+        })),
+      ],
+    }));
+  }, []);
+
+  const getQuoteItems = useCallback(
+    (projectId: string) =>
+      state.projectQuoteItems
+        .filter((q) => q.projectId === projectId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [state.projectQuoteItems],
+  );
+
+  const projectPlannedIncome = useCallback(
+    (projectId: string) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      if (!project) return 0;
+      const items = state.projectQuoteItems.filter((q) => q.projectId === projectId);
+      return plannedIncomeCents(items, project);
+    },
+    [state.projects, state.projectQuoteItems],
+  );
 
   const addPartner = useCallback(
     (p: Omit<Partner, 'id' | 'orgId' | 'activeProjects' | 'unpaidReceivableCents'>) => {
@@ -304,7 +384,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, highlightScheduleId: id }));
   }, []);
 
-  const setProjectDetailTab = useCallback((tab: 'basic' | 'transactions' | 'schedules') => {
+  const setProjectDetailTab = useCallback((tab: ProjectDetailTab) => {
     setState((s) => ({ ...s, projectDetailTab: tab }));
   }, []);
 
@@ -403,6 +483,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateProjectStatus,
       cancelProject,
       addProject,
+      addQuoteItems,
+      setQuoteItems,
+      getQuoteItems,
+      projectPlannedIncome,
       addSchedule,
       addScheduleTemplate,
       addPartner,
@@ -435,6 +519,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateProjectStatus,
       cancelProject,
       addProject,
+      addQuoteItems,
+      setQuoteItems,
+      getQuoteItems,
+      projectPlannedIncome,
       addSchedule,
       addScheduleTemplate,
       addPartner,

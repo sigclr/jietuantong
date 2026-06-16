@@ -4,10 +4,13 @@ import dayjs from 'dayjs';
 import { useApp } from '../../mocks/store';
 import { useRole } from '../../hooks/useRole';
 import { formatMoney, formatDateShort, isOverdue, SUPPLIER_CATEGORY_LABELS, INCOME_CATEGORIES } from '../../utils/format';
-import { StatusBadge, ScheduleBadge } from '../../components/StatusBadge';
+import { bizTypeLabel, emptyQuoteDraft } from '../../utils/quote';
+import { StatusBadge, ScheduleBadge, BizTypeBadge } from '../../components/StatusBadge';
 import { Drawer } from '../../components/Drawer';
 import { EmptyState } from '../../components/EmptyState';
 import { RowActions } from '../../components/RowActions';
+import { QuoteItemsEditor, quoteLinesFromItems, type QuoteLineDraft } from '../../components/QuoteItemsEditor';
+import type { ProjectDetailTab } from '../../types';
 
 export function ProjectDetailPage() {
   const { id } = useParams();
@@ -31,6 +34,9 @@ export function ProjectDetailPage() {
     projectDetailTab,
     setProjectDetailTab,
     projectFinance,
+    projectPlannedIncome,
+    getQuoteItems,
+    setQuoteItems,
     toast,
   } = useApp();
   const { canEditFinance, guardWrite } = useRole();
@@ -44,6 +50,8 @@ export function ProjectDetailPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [settleConfirm, setSettleConfirm] = useState(false);
+  const [quoteEdit, setQuoteEdit] = useState(false);
+  const [quoteDraft, setQuoteDraft] = useState<QuoteLineDraft[]>([]);
   const [scheduleDrawer, setScheduleDrawer] = useState(false);
 
   useEffect(() => {
@@ -78,11 +86,17 @@ export function ProjectDetailPage() {
   const txs = transactions.filter((t) => t.projectId === project.id);
   const finance = projectFinance(project.id);
   const pendingSchedules = schedules.filter((s) => s.status === 'pending');
+  const plannedIncome = projectPlannedIncome(project.id);
+  const quoteItems = getQuoteItems(project.id);
   const partner = partners.find((p) => p.id === project.partnerId);
 
-  const switchTab = (t: 'basic' | 'transactions' | 'schedules') => {
+  const switchTab = (t: ProjectDetailTab) => {
     setTab(t);
     setProjectDetailTab(t);
+    if (t === 'quote' && canEditFinance) {
+      setQuoteDraft(quoteLinesFromItems(quoteItems));
+      setQuoteEdit(false);
+    }
   };
 
   const onStatusChange = (status: typeof project.status) => {
@@ -182,19 +196,40 @@ export function ProjectDetailPage() {
       </div>
 
       <p style={{ marginBottom: 12 }}>
-        <strong>{project.title}</strong> · {getPartnerName(project.partnerId)} · 成人{project.paxAdult}+儿童
+        <strong>{project.title}</strong> · {getPartnerName(project.partnerId)} ·{' '}
+        <BizTypeBadge bizType={project.bizType} /> · 成人{project.paxAdult}+儿童
         {project.paxChild} · {formatDateShort(project.startDate)}-{formatDateShort(project.endDate)} ·{' '}
         <StatusBadge status={project.status} />
+        {project.bizType === 'outsourced_out' && project.outsourcedToPartnerId && (
+          <span className="text-muted">
+            {' '}
+            → 拼出 {getPartnerName(project.outsourcedToPartnerId)}
+          </span>
+        )}
         {project.cancelReason && <span className="text-muted"> · 取消原因：{project.cancelReason}</span>}
       </p>
 
       <p className="text-muted" style={{ marginBottom: 12, fontSize: 12 }}>
-        计划毛利 · P2（占位）— 预算 {project.budgetIncomeCents ? formatMoney(project.budgetIncomeCents) : '未设'}
+        计划收入 {plannedIncome ? formatMoney(plannedIncome) : '未录入'}
+        {quoteItems.length > 0 && `（团款组成 ${quoteItems.length} 项）`}
+        {' · '}
+        实际毛利 {formatMoney(finance.profitCents)}
+        {plannedIncome > 0 && (
+          <span>
+            {' '}
+            · 偏差{' '}
+            {Math.round(((finance.profitCents - (plannedIncome - finance.expenseCents)) / plannedIncome) * 100)}%（P2
+            预览）
+          </span>
+        )}
       </p>
 
       <div className="tabs">
         <button type="button" className={`tab ${tab === 'basic' ? 'active' : ''}`} onClick={() => switchTab('basic')}>
           基本信息
+        </button>
+        <button type="button" className={`tab ${tab === 'quote' ? 'active' : ''}`} onClick={() => switchTab('quote')}>
+          团款组成
         </button>
         <button
           type="button"
@@ -224,6 +259,15 @@ export function ProjectDetailPage() {
               <div>{getPartnerName(project.partnerId)}</div>
             </div>
             <div>
+              <span className="text-muted">业务类型</span>
+              <div>
+                {bizTypeLabel(project.bizType)}
+                {project.bizType === 'outsourced_out' && project.outsourcedToPartnerId && (
+                  <span className="text-muted"> → {getPartnerName(project.outsourcedToPartnerId)}</span>
+                )}
+              </div>
+            </div>
+            <div>
               <span className="text-muted">负责人</span>
               <div>{getUserName(project.ownerUserId)}</div>
             </div>
@@ -237,6 +281,87 @@ export function ProjectDetailPage() {
               <span className="text-muted">备注</span>
               <div>{project.remark || '—'}</div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'quote' && (
+        <div className="card">
+          <div className="card-h">
+            团款组成
+            {canEditFinance && !quoteEdit && (
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setQuoteEdit(true)}>
+                编辑
+              </button>
+            )}
+          </div>
+          <div className="card-b">
+            {quoteItems.length === 0 && !quoteEdit ? (
+              <EmptyState
+                title="暂无团款明细"
+                description="按单价填写（人均或每组），不是整团一口价"
+                action={
+                  canEditFinance ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        setQuoteDraft([{ ...emptyQuoteDraft(), key: `q${Date.now()}` }]);
+                        setQuoteEdit(true);
+                      }}
+                    >
+                      + 添加一行
+                    </button>
+                  ) : undefined
+                }
+              />
+            ) : (
+              <>
+                <QuoteItemsEditor
+                  lines={quoteEdit ? quoteDraft : quoteLinesFromItems(quoteItems)}
+                  onChange={setQuoteDraft}
+                  paxAdult={project.paxAdult}
+                  paxChild={project.paxChild}
+                  readOnly={!quoteEdit}
+                />
+                {quoteEdit && (
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={() => {
+                        setQuoteEdit(false);
+                        setQuoteDraft(quoteLinesFromItems(quoteItems));
+                      }}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        if (!guardWrite('保存团款组成')) return;
+                        const valid = quoteDraft.filter((l) => l.itemLabel.trim() && l.unitPriceCents > 0);
+                        setQuoteItems(
+                          project.id,
+                          valid.map(({ itemLabel, unitPriceCents, pricingUnit, quantity, remark }) => ({
+                            itemLabel,
+                            unitPriceCents,
+                            pricingUnit,
+                            quantity,
+                            remark,
+                          })),
+                        );
+                        setQuoteEdit(false);
+                        toast('团款组成已保存');
+                      }}
+                    >
+                      保存
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       )}

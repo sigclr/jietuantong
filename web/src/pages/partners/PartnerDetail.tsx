@@ -1,6 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useApp } from '../../mocks/store';
 import { formatMoney } from '../../utils/format';
+import { partnerKindLabel } from '../../utils/quote';
 import { StatusBadge } from '../../components/StatusBadge';
 
 export function PartnerDetailPage() {
@@ -33,7 +34,8 @@ export function PartnerDetailPage() {
       </div>
 
       <p className="text-muted" style={{ marginBottom: 16 }}>
-        联系人 {partner.contact} · {partner.phone} · 账期 {partner.settlementDays} 天
+        联系人 {partner.contact} · {partner.phone} · 账期 {partner.settlementDays} 天 · 类型{' '}
+        {partnerKindLabel(partner.partnerKind)}
       </p>
 
       <div className="stats-grid" style={{ marginBottom: 16 }}>

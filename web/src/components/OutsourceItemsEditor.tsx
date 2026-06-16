@@ -1,46 +1,68 @@
 import { formatMoney } from '../utils/format';
 import {
-  emptyQuoteDraft,
+  emptyOutsourceDraft,
+  outsourceItemAmountCents,
+  outsourceSpreadCents,
+  outsourceTotalCents,
   plannedIncomeCents,
   pricingUnitLabel,
-  quoteDirectionLabel,
-  quoteItemAmountCents,
 } from '../utils/quote';
-import type { PricingUnit, ProjectQuoteItem, QuoteDirection, QuoteItemDraft } from '../types';
+import type { Partner, PricingUnit, ProjectOutsourceItem, ProjectQuoteItem, OutsourceItemDraft } from '../types';
 
-export type QuoteLineDraft = QuoteItemDraft & { key: string };
+export type OutsourceLineDraft = OutsourceItemDraft & { key: string };
 
-function newLine(): QuoteLineDraft {
-  return { ...emptyQuoteDraft(), key: `q${Date.now()}${Math.random()}` };
+function newLine(peerPartnerId: string): OutsourceLineDraft {
+  return { ...emptyOutsourceDraft(peerPartnerId), key: `o${Date.now()}${Math.random()}` };
 }
 
-interface QuoteItemsEditorProps {
-  lines: QuoteLineDraft[];
-  onChange: (lines: QuoteLineDraft[]) => void;
+interface OutsourceItemsEditorProps {
+  lines: OutsourceLineDraft[];
+  onChange: (lines: OutsourceLineDraft[]) => void;
+  peers: Partner[];
+  defaultPeerId?: string;
+  fixedPeerId?: string;
+  hidePeerHint?: boolean;
   paxAdult: number;
   paxChild: number;
+  quoteItems: ProjectQuoteItem[];
   readOnly?: boolean;
 }
 
-export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly }: QuoteItemsEditorProps) {
+export function OutsourceItemsEditor({
+  lines,
+  onChange,
+  peers,
+  defaultPeerId,
+  fixedPeerId,
+  hidePeerHint,
+  paxAdult,
+  paxChild,
+  quoteItems,
+  readOnly,
+}: OutsourceItemsEditorProps) {
   const project = { paxAdult, paxChild };
+  const peerId = fixedPeerId ?? defaultPeerId ?? peers[0]?.id ?? '';
+  const peerLabel = peers.find((p) => p.id === peerId)?.name ?? '—';
+
   const asItems = lines.map((l, i) => ({
     id: l.key,
     orgId: '',
     projectId: '',
+    peerPartnerId: fixedPeerId ?? l.peerPartnerId,
     itemLabel: l.itemLabel,
-    direction: l.direction ?? 'add',
     unitPriceCents: l.unitPriceCents,
     pricingUnit: l.pricingUnit,
     quantity: l.quantity,
+    standard: l.standard,
     remark: l.remark,
     sortOrder: i,
-  })) as ProjectQuoteItem[];
+  })) as ProjectOutsourceItem[];
 
-  const total = plannedIncomeCents(asItems, project);
-  const negativeIncome = total < 0;
+  const total = outsourceTotalCents(asItems, project);
+  const spread = outsourceSpreadCents(quoteItems, asItems, project);
+  const planned = plannedIncomeCents(quoteItems, project);
 
-  const update = (key: string, patch: Partial<QuoteLineDraft>) => {
+  const update = (key: string, patch: Partial<OutsourceLineDraft>) => {
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   };
 
@@ -52,18 +74,23 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
 
   return (
     <div className="quote-editor">
+      {fixedPeerId && !hidePeerHint && (
+        <p className="form-section-hint" style={{ marginBottom: 8 }}>
+          承接同行：<strong>{peerLabel}</strong>
+        </p>
+      )}
       {lines.length === 0 ? (
         <p className="text-muted" style={{ fontSize: 13, marginBottom: 12 }}>
-          添加团款明细。按单价填写（人均或每组），可加可减，不是整团一口价。
+          添加拼出分项：费用项、单价、执行标准，合计即顶栏预估。
         </p>
       ) : (
         <table className="data-table quote-table">
           <thead>
             <tr>
-              <th>费用类型</th>
-              <th>+/−</th>
+              <th>费用项</th>
               <th>单价（元）</th>
               <th>计价</th>
+              <th>标准</th>
               <th>备注</th>
               <th>小计</th>
               {!readOnly && <th style={{ width: 40 }} />}
@@ -71,14 +98,12 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
           </thead>
           <tbody>
             {lines.map((line) => {
-              const dir = line.direction ?? 'add';
               const rowItem = {
                 unitPriceCents: line.unitPriceCents,
                 pricingUnit: line.pricingUnit,
                 quantity: line.quantity,
-                direction: dir,
               };
-              const sub = quoteItemAmountCents(rowItem, paxAdult, paxChild);
+              const sub = outsourceItemAmountCents(rowItem, paxAdult, paxChild);
               return (
                 <tr key={line.key}>
                   <td>
@@ -88,24 +113,9 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
                       <input
                         value={line.itemLabel}
                         onChange={(e) => update(line.key, { itemLabel: e.target.value })}
-                        placeholder="团款"
-                        list="quote-type-hints"
+                        placeholder="执行团款"
                         required
                       />
-                    )}
-                  </td>
-                  <td>
-                    {readOnly ? (
-                      <span className={dir === 'subtract' ? 'text-danger' : ''}>{quoteDirectionLabel(dir)}</span>
-                    ) : (
-                      <select
-                        value={dir}
-                        onChange={(e) => update(line.key, { direction: e.target.value as QuoteDirection })}
-                        className="quote-direction-select"
-                      >
-                        <option value="add">+</option>
-                        <option value="subtract">−</option>
-                      </select>
                     )}
                   </td>
                   <td>
@@ -153,19 +163,27 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
                   </td>
                   <td>
                     {readOnly ? (
+                      line.standard || '—'
+                    ) : (
+                      <input
+                        value={line.standard ?? ''}
+                        onChange={(e) => update(line.key, { standard: e.target.value })}
+                        placeholder="含车导餐不含票"
+                      />
+                    )}
+                  </td>
+                  <td>
+                    {readOnly ? (
                       line.remark || '—'
                     ) : (
                       <input
                         value={line.remark ?? ''}
                         onChange={(e) => update(line.key, { remark: e.target.value })}
-                        placeholder="标间含早"
+                        placeholder="选填"
                       />
                     )}
                   </td>
-                  <td className={sub < 0 ? 'text-danger' : ''}>
-                    {sub < 0 ? '−' : ''}
-                    {formatMoney(Math.abs(sub))}
-                  </td>
+                  <td>{formatMoney(sub)}</td>
                   {!readOnly && (
                     <td>
                       <button type="button" className="btn-icon" onClick={() => remove(line.key)} aria-label="删除">
@@ -179,33 +197,24 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
           </tbody>
         </table>
       )}
-      {!readOnly && (
-        <datalist id="quote-type-hints">
-          <option value="团款" />
-          <option value="酒店" />
-          <option value="用车" />
-          <option value="门票" />
-          <option value="导服" />
-          <option value="餐饮" />
-          <option value="优惠退费" />
-          <option value="增加住宿" />
-        </datalist>
-      )}
-      {negativeIncome && (
-        <div className="warn-box" style={{ marginTop: 8 }}>
-          ⚠ 计划收入为负，请核对加减项
-        </div>
-      )}
       <div className="quote-total">
         {!readOnly && (
-          <button type="button" className="btn btn-outline btn-sm" onClick={() => onChange([...lines, newLine()])}>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => onChange([...lines, newLine(peerId)])}
+          >
             + 添加一行
           </button>
         )}
         <span className="quote-total-sum">
-          计划收入 <strong className={negativeIncome ? 'text-danger' : ''}>{formatMoney(total)}</strong>
-          {paxAdult + paxChild > 0 && (
-            <small className="text-muted">（{paxAdult}+{paxChild} 人）</small>
+          拼出合计（预估） <strong>{formatMoney(total)}</strong>
+          {planned > 0 && lines.length > 0 && (
+            <>
+              {' · '}
+              拼出差价（预览）{' '}
+              <strong className={spread < 0 ? 'text-danger' : ''}>{formatMoney(spread)}</strong>
+            </>
           )}
         </span>
       </div>
@@ -213,39 +222,32 @@ export function QuoteItemsEditor({ lines, onChange, paxAdult, paxChild, readOnly
   );
 }
 
-export function quoteLinesFromItems(items: ProjectQuoteItem[]): QuoteLineDraft[] {
+export function outsourceLinesFromItems(items: ProjectOutsourceItem[]): OutsourceLineDraft[] {
   return [...items]
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((item) => ({
       key: item.id,
+      peerPartnerId: item.peerPartnerId,
       itemLabel: item.itemLabel,
-      direction: item.direction ?? 'add',
       unitPriceCents: item.unitPriceCents,
       pricingUnit: item.pricingUnit,
       quantity: item.quantity,
+      standard: item.standard,
       remark: item.remark,
     }));
 }
 
-export function defaultNewQuoteLines(): QuoteLineDraft[] {
+export function defaultNewOutsourceLines(peerPartnerId: string): OutsourceLineDraft[] {
   return [
     {
-      key: 'q1',
-      itemLabel: '团款',
-      direction: 'add',
-      unitPriceCents: 195000,
+      key: 'o1',
+      peerPartnerId,
+      itemLabel: '执行团款',
+      unitPriceCents: 145000,
       pricingUnit: 'per_person',
       quantity: 1,
-      remark: '含车导餐',
-    },
-    {
-      key: 'q2',
-      itemLabel: '门票',
-      direction: 'add',
-      unitPriceCents: 12000,
-      pricingUnit: 'per_person',
-      quantity: 1,
-      remark: '喀纳斯区间车',
+      standard: '含车导餐不含门票',
+      remark: '',
     },
   ];
 }

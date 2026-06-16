@@ -3,15 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../../mocks/store';
 import { useRole } from '../../hooks/useRole';
 import { formatMoney, formatDateShort } from '../../utils/format';
-import { StatusBadge, BizTypeBadge } from '../../components/StatusBadge';
+import { StatusBadge, BizTypeBadge, OutsourceSettlementBadge } from '../../components/StatusBadge';
 import { EmptyState } from '../../components/EmptyState';
 import { RowActions } from '../../components/RowActions';
+import type { OutsourceSettlementStatus } from '../../types';
 
 export function ProjectListPage() {
-  const { projects, getPartnerName, projectFinance, opStats } = useApp();
+  const { projects, getPartnerName, projectFinance, projectOutsourceFinance, opStats } = useApp();
   const { canCreateProject, isOp, guardWrite } = useRole();
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState('all');
+  const [outsourceSettleFilter, setOutsourceSettleFilter] = useState('all');
   const [search, setSearch] = useState('');
   const stats = opStats();
 
@@ -28,6 +30,11 @@ export function ProjectListPage() {
   const filtered = projects.filter((p) => {
     if (statusFilter !== 'all' && p.status !== statusFilter) return false;
     if (search && !p.groupNo.includes(search) && !p.title.includes(search)) return false;
+    if (outsourceSettleFilter !== 'all') {
+      if (p.bizType !== 'outsourced_out') return false;
+      const fin = projectOutsourceFinance(p.id);
+      if (fin.status !== outsourceSettleFilter) return false;
+    }
     return true;
   });
 
@@ -78,6 +85,12 @@ export function ProjectListPage() {
           <option value="settled">已结清</option>
           <option value="cancelled">已取消</option>
         </select>
+        <select value={outsourceSettleFilter} onChange={(e) => setOutsourceSettleFilter(e.target.value)}>
+          <option value="all">拼出结账（全部）</option>
+          <option value="unsettled">未结清</option>
+          <option value="partial">部分结清</option>
+          <option value="settled">已结清</option>
+        </select>
         {!isOp && (
           <input placeholder="搜索团号/团名…" value={search} onChange={(e) => setSearch(e.target.value)} />
         )}
@@ -104,6 +117,8 @@ export function ProjectListPage() {
                 <th>团名/线路</th>
                 <th>组团社</th>
                 <th>类型</th>
+                <th>拼出待付</th>
+                <th>拼出结账</th>
                 <th>人数</th>
                 <th>起止日期</th>
                 <th>状态</th>
@@ -114,6 +129,8 @@ export function ProjectListPage() {
             <tbody>
               {filtered.map((p) => {
                 const fin = projectFinance(p.id);
+                const outsourceFin = projectOutsourceFinance(p.id);
+                const isOutsource = p.bizType === 'outsourced_out';
                 return (
                   <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${p.groupNo}`)}>
                     <td>
@@ -123,6 +140,18 @@ export function ProjectListPage() {
                     <td>{getPartnerName(p.partnerId)}</td>
                     <td>
                       <BizTypeBadge bizType={p.bizType} />
+                    </td>
+                    <td>
+                      {isOutsource && outsourceFin.estimatedCents > 0
+                        ? formatMoney(outsourceFin.pendingCents)
+                        : '—'}
+                    </td>
+                    <td>
+                      {isOutsource && outsourceFin.estimatedCents > 0 ? (
+                        <OutsourceSettlementBadge status={outsourceFin.status as OutsourceSettlementStatus} />
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td>
                       {p.paxAdult}+{p.paxChild}

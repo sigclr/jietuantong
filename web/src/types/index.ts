@@ -4,11 +4,15 @@ export type ProjectStatus = 'pending' | 'ongoing' | 'completed' | 'settled' | 'c
 export type BizType = 'self_operated' | 'outsourced_out';
 export type PartnerKind = 'group_agent' | 'peer' | 'both';
 export type PricingUnit = 'per_person' | 'per_group';
+export type QuoteDirection = 'add' | 'subtract';
 export type ScheduleDirection = 'receivable' | 'payable';
 export type ScheduleStatus = 'pending' | 'done';
+export type ScheduleSourceKind = 'manual' | 'deposit_tail' | 'outsource';
+export type OutsourcePaymentMethod = 'bank_transfer' | 'cash' | 'alipay' | 'other';
+export type OutsourceSettlementStatus = 'empty' | 'unsettled' | 'partial' | 'settled' | 'overpaid';
 export type TransactionDirection = 'income' | 'expense';
 export type SupplierCategory = 'hotel' | 'transport' | 'restaurant' | 'ticket' | 'guide' | 'other';
-export type ProjectDetailTab = 'basic' | 'quote' | 'transactions' | 'schedules';
+export type ProjectDetailTab = 'basic' | 'quote' | 'outsource' | 'transactions' | 'schedules';
 
 export interface Organization {
   id: string;
@@ -74,9 +78,38 @@ export interface ProjectQuoteItem {
   orgId: string;
   projectId: string;
   itemLabel: string;
+  direction: QuoteDirection;
   unitPriceCents: number;
   pricingUnit: PricingUnit;
   quantity: number;
+  remark?: string;
+  sortOrder: number;
+}
+
+export interface OutsourceSettlement {
+  id: string;
+  orgId: string;
+  projectId: string;
+  peerPartnerId: string;
+  amountCents: number;
+  paymentMethod: OutsourcePaymentMethod;
+  settledDate: string;
+  remark?: string;
+  txnId: string;
+  createdBy: string;
+  createdAt: number;
+}
+
+export interface ProjectOutsourceItem {
+  id: string;
+  orgId: string;
+  projectId: string;
+  peerPartnerId: string;
+  itemLabel: string;
+  unitPriceCents: number;
+  pricingUnit: PricingUnit;
+  quantity: number;
+  standard?: string;
   remark?: string;
   sortOrder: number;
 }
@@ -92,6 +125,8 @@ export interface PaymentSchedule {
   dueDate: string;
   status: ScheduleStatus;
   doneTxnId?: string;
+  sourceKind?: ScheduleSourceKind;
+  peerPartnerId?: string;
 }
 
 export interface Transaction {
@@ -118,3 +153,12 @@ export interface Invite {
 export type QuoteItemDraft = Omit<ProjectQuoteItem, 'id' | 'orgId' | 'projectId' | 'sortOrder'> & {
   sortOrder?: number;
 };
+
+export type OutsourceItemDraft = Omit<ProjectOutsourceItem, 'id' | 'orgId' | 'projectId' | 'sortOrder'> & {
+  sortOrder?: number;
+};
+
+export type OutsourceSettlementDraft = Pick<
+  OutsourceSettlement,
+  'amountCents' | 'paymentMethod' | 'settledDate' | 'remark'
+>;

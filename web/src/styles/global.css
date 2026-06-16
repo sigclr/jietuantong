@@ -426,6 +426,41 @@ table.data-table th {
   font-size: 13px;
 }
 .quote-total-sum strong { color: var(--primary); margin-left: 4px; }
+.badge-outsource-payable { background: #e8d4f8; color: #5a2d82; font-size: 11px; margin-right: 4px; }
+.badge-outsource-unsettled { background: #e9ecef; color: #495057; }
+.badge-outsource-partial { background: #ffe8cc; color: #c45c00; }
+.badge-outsource-settled { background: #d4edda; color: #155724; }
+.badge-outsource-overpaid { background: #f8d7da; color: #721c24; }
+.outsource-header-summary { margin-left: 4px; }
+.outsource-header-summary .text-warning { font-weight: 500; }
+.form-section { margin-top: 8px; }
+.form-section-label {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+.form-section-hint { font-size: 13px; color: var(--muted); }
+.form-section-outsource {
+  margin-top: 4px;
+  padding: 14px 16px;
+  background: #f6f8fc;
+  border: 1px solid #d4e4f7;
+  border-radius: 8px;
+}
+.form-section-outsource .form-section-label { color: #004085; }
+.outsource-header-price { margin-left: 4px; }
+.collapsible-toggle {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  margin-bottom: 8px;
+}
+.quote-direction-select { width: 52px; padding: 4px 6px; }
+.text-warning { color: #856404; }
 
 .radio-row { display: flex; gap: 16px; font-size: 13px; }
 .radio-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }

@@ -25,3 +25,29 @@ export function BizTypeBadge({ bizType }: { bizType: string }) {
   }
   return <span className="badge badge-self">自营</span>;
 }
+
+export function OutsourceSourceBadge() {
+  return <span className="badge badge-outsource-payable">拼出</span>;
+}
+
+const OUTSOURCE_SETTLE_CLASS: Record<string, string> = {
+  unsettled: 'badge-outsource-unsettled',
+  partial: 'badge-outsource-partial',
+  settled: 'badge-outsource-settled',
+  overpaid: 'badge-outsource-overpaid',
+};
+
+export function OutsourceSettlementBadge({ status }: { status: string }) {
+  if (status === 'empty') return <span className="text-muted">—</span>;
+  const labels: Record<string, string> = {
+    unsettled: '未结清',
+    partial: '部分结清',
+    settled: '已结清',
+    overpaid: '已付超出',
+  };
+  return (
+    <span className={`badge ${OUTSOURCE_SETTLE_CLASS[status] ?? 'badge-outsource-unsettled'}`}>
+      {labels[status] ?? status}
+    </span>
+  );
+}

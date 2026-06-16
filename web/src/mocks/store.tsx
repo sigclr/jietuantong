@@ -1,13 +1,17 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import dayjs from 'dayjs';
 import { cloneInitialData } from './data';
-import { plannedIncomeCents } from '../utils/quote';
+import { plannedIncomeCents, outsourceTotalCents, outsourcePaidCents, outsourcePendingCents, outsourceSettlementStatus, outsourcePaymentMethodLabel } from '../utils/quote';
 import type {
+  OutsourceItemDraft,
+  OutsourceSettlement,
+  OutsourceSettlementDraft,
   Partner,
   PaymentSchedule,
   Persona,
   Project,
   ProjectDetailTab,
+  ProjectOutsourceItem,
   ProjectQuoteItem,
   QuoteItemDraft,
   Supplier,
@@ -28,6 +32,8 @@ interface AppState {
   suppliers: Supplier[];
   projects: Project[];
   projectQuoteItems: ProjectQuoteItem[];
+  projectOutsourceItems: ProjectOutsourceItem[];
+  outsourceSettlements: OutsourceSettlement[];
   paymentSchedules: PaymentSchedule[];
   transactions: Transaction[];
   invites: ReturnType<typeof cloneInitialData>['invites'];
@@ -58,6 +64,22 @@ interface AppContextValue extends AppState {
   addQuoteItems: (projectId: string, items: QuoteItemDraft[]) => void;
   setQuoteItems: (projectId: string, items: QuoteItemDraft[]) => void;
   getQuoteItems: (projectId: string) => ProjectQuoteItem[];
+  addOutsourceItems: (projectId: string, items: OutsourceItemDraft[]) => void;
+  setOutsourceItems: (projectId: string, items: OutsourceItemDraft[]) => void;
+  getOutsourceItems: (projectId: string) => ProjectOutsourceItem[];
+  getOutsourceSettlements: (projectId: string) => OutsourceSettlement[];
+  projectOutsourceFinance: (projectId: string) => {
+    estimatedCents: number;
+    paidCents: number;
+    pendingCents: number;
+    status: ReturnType<typeof outsourceSettlementStatus>;
+  };
+  addOutsourceSettlement: (
+    projectId: string,
+    draft: OutsourceSettlementDraft,
+  ) => { ok: true } | { ok: false; reason: string };
+  addOutsourcePayableSchedule: (projectId: string) => boolean;
+  syncOutsourcePayableSchedule: (projectId: string) => boolean;
   projectPlannedIncome: (projectId: string) => number;
   addSchedule: (s: Omit<PaymentSchedule, 'id' | 'orgId' | 'status'>) => void;
   addScheduleTemplate: (projectId: string, template: 'deposit_tail') => void;
@@ -138,6 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => {
       const sch = s.paymentSchedules.find((x) => x.id === id);
       if (!sch || sch.status === 'done') return s;
+      if (sch.sourceKind === 'outsource') return s;
 
       const txId = `tx${Date.now()}`;
       const newTx: Transaction = {
@@ -266,6 +289,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           orgId: s.organization.id,
           projectId,
           itemLabel: d.itemLabel,
+          direction: d.direction ?? 'add',
           unitPriceCents: d.unitPriceCents,
           pricingUnit: d.pricingUnit,
           quantity: d.quantity,
@@ -287,6 +311,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           orgId: s.organization.id,
           projectId,
           itemLabel: d.itemLabel,
+          direction: d.direction ?? 'add',
           unitPriceCents: d.unitPriceCents,
           pricingUnit: d.pricingUnit,
           quantity: d.quantity,
@@ -304,6 +329,239 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .sort((a, b) => a.sortOrder - b.sortOrder),
     [state.projectQuoteItems],
   );
+
+  const addOutsourceItems = useCallback((projectId: string, items: OutsourceItemDraft[]) => {
+    if (items.length === 0) return;
+    const base = Date.now();
+    setState((s) => ({
+      ...s,
+      projectOutsourceItems: [
+        ...s.projectOutsourceItems,
+        ...items.map((d, i) => ({
+          id: `poi${base}${i}`,
+          orgId: s.organization.id,
+          projectId,
+          peerPartnerId: d.peerPartnerId,
+          itemLabel: d.itemLabel,
+          unitPriceCents: d.unitPriceCents,
+          pricingUnit: d.pricingUnit,
+          quantity: d.quantity,
+          standard: d.standard,
+          remark: d.remark,
+          sortOrder: i,
+        })),
+      ],
+    }));
+  }, []);
+
+  const setOutsourceItems = useCallback((projectId: string, items: OutsourceItemDraft[]) => {
+    const base = Date.now();
+    setState((s) => ({
+      ...s,
+      projectOutsourceItems: [
+        ...s.projectOutsourceItems.filter((o) => o.projectId !== projectId),
+        ...items.map((d, i) => ({
+          id: `poi${base}${i}`,
+          orgId: s.organization.id,
+          projectId,
+          peerPartnerId: d.peerPartnerId,
+          itemLabel: d.itemLabel,
+          unitPriceCents: d.unitPriceCents,
+          pricingUnit: d.pricingUnit,
+          quantity: d.quantity,
+          standard: d.standard,
+          remark: d.remark,
+          sortOrder: i,
+        })),
+      ],
+    }));
+  }, []);
+
+  const getOutsourceItems = useCallback(
+    (projectId: string) =>
+      state.projectOutsourceItems
+        .filter((o) => o.projectId === projectId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [state.projectOutsourceItems],
+  );
+
+  const getOutsourceSettlements = useCallback(
+    (projectId: string) =>
+      state.outsourceSettlements
+        .filter((o) => o.projectId === projectId)
+        .sort((a, b) => b.createdAt - a.createdAt),
+    [state.outsourceSettlements],
+  );
+
+  const projectOutsourceFinance = useCallback(
+    (projectId: string) => {
+      const project = state.projects.find((p) => p.id === projectId);
+      const items = state.projectOutsourceItems.filter((o) => o.projectId === projectId);
+      const settlements = state.outsourceSettlements.filter((o) => o.projectId === projectId);
+      const estimatedCents = project && items.length > 0 ? outsourceTotalCents(items, project) : 0;
+      const paidCents = outsourcePaidCents(settlements);
+      const pendingCents = outsourcePendingCents(estimatedCents, paidCents);
+      const status = outsourceSettlementStatus(estimatedCents, paidCents);
+      return { estimatedCents, paidCents, pendingCents, status };
+    },
+    [state.projects, state.projectOutsourceItems, state.outsourceSettlements],
+  );
+
+  const addOutsourceSettlement = useCallback(
+    (projectId: string, draft: OutsourceSettlementDraft): { ok: true } | { ok: false; reason: string } => {
+      let result: { ok: true } | { ok: false; reason: string } = { ok: false, reason: '未知错误' };
+
+      setState((s) => {
+        const project = s.projects.find((p) => p.id === projectId);
+        if (!project || project.bizType !== 'outsourced_out') {
+          result = { ok: false, reason: '仅拼出团可结账' };
+          return s;
+        }
+
+        const items = s.projectOutsourceItems.filter((o) => o.projectId === projectId);
+        const estimatedCents = outsourceTotalCents(items, project);
+        if (estimatedCents <= 0) {
+          result = { ok: false, reason: '请先填写拼出价格' };
+          return s;
+        }
+
+        const settlements = s.outsourceSettlements.filter((o) => o.projectId === projectId);
+        const paidCents = outsourcePaidCents(settlements);
+        const pendingCents = outsourcePendingCents(estimatedCents, paidCents);
+
+        if (pendingCents <= 0) {
+          result = { ok: false, reason: '该拼出已全部结清' };
+          return s;
+        }
+        if (draft.amountCents <= 0 || draft.amountCents > pendingCents) {
+          result = { ok: false, reason: '本次结算不可超过待付金额' };
+          return s;
+        }
+
+        const peerId = project.outsourcedToPartnerId ?? items[0]?.peerPartnerId;
+        const peer = s.partners.find((p) => p.id === peerId);
+        if (!peer) {
+          result = { ok: false, reason: '未找到承接同行' };
+          return s;
+        }
+
+        const txId = `tx${Date.now()}`;
+        const settlementId = `osl${Date.now()}`;
+        const methodLabel = outsourcePaymentMethodLabel(draft.paymentMethod);
+
+        const newTx: Transaction = {
+          id: txId,
+          orgId: s.organization.id,
+          projectId,
+          direction: 'expense',
+          category: 'other',
+          amountCents: draft.amountCents,
+          date: draft.settledDate,
+          note: `拼出结账 · ${peer.name} · ${methodLabel}${draft.remark ? ` · ${draft.remark}` : ''}`,
+          createdBy: 'u2',
+        };
+
+        const newSettlement: OutsourceSettlement = {
+          id: settlementId,
+          orgId: s.organization.id,
+          projectId,
+          peerPartnerId: peer.id,
+          amountCents: draft.amountCents,
+          paymentMethod: draft.paymentMethod,
+          settledDate: draft.settledDate,
+          remark: draft.remark,
+          txnId: txId,
+          createdBy: 'u2',
+          createdAt: Math.floor(Date.now() / 1000),
+        };
+
+        const newPaid = paidCents + draft.amountCents;
+        const markSchedulesDone = newPaid >= estimatedCents;
+
+        result = { ok: true };
+        return {
+          ...s,
+          transactions: [newTx, ...s.transactions],
+          outsourceSettlements: [...s.outsourceSettlements, newSettlement],
+          paymentSchedules: markSchedulesDone
+            ? s.paymentSchedules.map((sch) =>
+                sch.projectId === projectId &&
+                sch.sourceKind === 'outsource' &&
+                sch.direction === 'payable' &&
+                sch.status === 'pending'
+                  ? { ...sch, status: 'done' as const, doneTxnId: txId }
+                  : sch,
+              )
+            : s.paymentSchedules,
+        };
+      });
+
+      return result;
+    },
+    [],
+  );
+
+  const addOutsourcePayableSchedule = useCallback((projectId: string): boolean => {
+    let added = false;
+    setState((s) => {
+      const project = s.projects.find((p) => p.id === projectId);
+      if (!project || project.bizType !== 'outsourced_out') return s;
+
+      const items = s.projectOutsourceItems.filter((o) => o.projectId === projectId);
+      const total = outsourceTotalCents(items, project);
+      if (total <= 0) return s;
+
+      const peerId = project.outsourcedToPartnerId ?? items[0]?.peerPartnerId;
+      const peer = s.partners.find((p) => p.id === peerId);
+      if (!peer) return s;
+
+      const existing = s.paymentSchedules.find(
+        (sch) =>
+          sch.projectId === projectId &&
+          sch.sourceKind === 'outsource' &&
+          sch.direction === 'payable' &&
+          sch.status === 'pending',
+      );
+
+      if (existing) {
+        added = true;
+        return {
+          ...s,
+          paymentSchedules: s.paymentSchedules.map((sch) =>
+            sch.id === existing.id
+              ? { ...sch, amountCents: total, counterpartyName: peer.name, peerPartnerId: peer.id }
+              : sch,
+          ),
+        };
+      }
+
+      added = true;
+      return {
+        ...s,
+        paymentSchedules: [
+          ...s.paymentSchedules,
+          {
+            id: `sch${Date.now()}`,
+            orgId: s.organization.id,
+            projectId,
+            direction: 'payable' as const,
+            counterpartyName: peer.name,
+            title: '拼出团款',
+            amountCents: total,
+            dueDate: project.startDate,
+            status: 'pending' as const,
+            sourceKind: 'outsource' as const,
+            peerPartnerId: peer.id,
+          },
+        ],
+      };
+    });
+    return added;
+  }, []);
+
+  const syncOutsourcePayableSchedule = useCallback((projectId: string): boolean => {
+    return addOutsourcePayableSchedule(projectId);
+  }, [addOutsourcePayableSchedule]);
 
   const projectPlannedIncome = useCallback(
     (projectId: string) => {
@@ -486,6 +744,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addQuoteItems,
       setQuoteItems,
       getQuoteItems,
+      addOutsourceItems,
+      setOutsourceItems,
+      getOutsourceItems,
+      getOutsourceSettlements,
+      projectOutsourceFinance,
+      addOutsourceSettlement,
+      addOutsourcePayableSchedule,
+      syncOutsourcePayableSchedule,
       projectPlannedIncome,
       addSchedule,
       addScheduleTemplate,
@@ -522,6 +788,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addQuoteItems,
       setQuoteItems,
       getQuoteItems,
+      addOutsourceItems,
+      setOutsourceItems,
+      getOutsourceItems,
+      getOutsourceSettlements,
+      projectOutsourceFinance,
+      addOutsourceSettlement,
+      addOutsourcePayableSchedule,
+      syncOutsourcePayableSchedule,
       projectPlannedIncome,
       addSchedule,
       addScheduleTemplate,

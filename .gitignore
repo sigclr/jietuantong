@@ -20,3 +20,7 @@ npm-debug.log*
 # Build cache
 *.tsbuildinfo
 .vite/
+
+# CodeGraph local index (see .codegraph/.gitignore)
+.codegraph/*
+!.codegraph/.gitignore

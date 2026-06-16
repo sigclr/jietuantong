@@ -44,6 +44,34 @@ npm run dev
 - `n` — 接团列表新建（仅阿财）
 - `Esc` — 关闭抽屉/弹窗
 
+## CodeGraph（代码图谱 / Cursor MCP）
+
+本项目已接入 [@colbymchenry/codegraph](https://www.npmjs.com/package/@colbymchenry/codegraph)，供 Cursor 通过 MCP 查询调用链、依赖与符号结构。
+
+**已配置（本仓库）：**
+
+- `.cursor/mcp.json` — Cursor 项目级 MCP（指向本仓库根目录）
+- `.codegraph/` — 本地代码索引（不入库，换机器需重建）
+
+**新克隆仓库后：**
+
+```bash
+npm i -g @colbymchenry/codegraph   # 若未安装
+cd "d:\Person\ly demo"
+codegraph init                     # 重建索引
+```
+
+然后在 Cursor 中 **重启窗口** 或打开 **Settings → Tools & MCP**，确认 `codegraph` 为已连接（绿点）。
+
+**常用命令：**
+
+```bash
+codegraph status                   # 索引状态
+codegraph sync                     # 增量同步
+codegraph query AppProvider        # 搜索符号
+codegraph explore store.tsx        # 探索文件/模块
+```
+
 ## 仓库
 
 https://github.com/sigclr/jietuantong
